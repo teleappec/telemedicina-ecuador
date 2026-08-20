@@ -2,12 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // URL de tu servidor desplegado en Render
   static const String baseUrl = 'https://telemedicina-ecuador.onrender.com/api';
 
-  /// Iniciar sesión consultando la API en Render
+  /// Inicia sesión con Cédula/Correo, Contraseña y Rol
   static Future<Map<String, dynamic>> iniciarSesion({
-    required String cedula,
+    required String identificador, // Cédula o Correo
     required String password,
     required String rol,
   }) async {
@@ -18,14 +17,12 @@ class ApiService {
             url,
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'cedula': cedula,
+              'identificador': identificador,
               'password': password,
               'rol': rol,
             }),
           )
-          .timeout(
-            const Duration(seconds: 60),
-          ); // Render puede tardar si estaba dormido
+          .timeout(const Duration(seconds: 60));
 
       final data = jsonDecode(response.body);
 
@@ -38,7 +35,7 @@ class ApiService {
       } else {
         return {
           'exito': false,
-          'mensaje': data['mensaje'] ?? 'Credenciales incorrectas.',
+          'mensaje': data['mensaje'] ?? 'Credenciales o rol incorrectos.',
         };
       }
     } catch (e) {
@@ -49,7 +46,7 @@ class ApiService {
     }
   }
 
-  /// Ejemplo: Registrar profesional de salud
+  /// Registro de primer ingreso
   static Future<Map<String, dynamic>> registrarProfesional(
     Map<String, dynamic> datos,
   ) async {
@@ -74,7 +71,10 @@ class ApiService {
         };
       }
     } catch (e) {
-      return {'exito': false, 'mensaje': 'Error de red al conectar con Render'};
+      return {
+        'exito': false,
+        'mensaje': 'Error de red al conectar con Render.',
+      };
     }
   }
 }
