@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'telemedicina_ecuador_secreto_super_seguro_2026';
 
 // Middlewares
 app.use(cors());
@@ -16,6 +19,24 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/telemedicina',
   ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
+
+// Middleware para verificar JWT
+const verificarToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ exito: false, mensaje: 'Acceso denegado: Token no proporcionado.' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, usuario) => {
+    if (err) {
+      return res.status(403).json({ exito: false, mensaje: 'Token inválido o expirado.' });
+    }
+    req.usuario = usuario;
+    next();
+  });
+};
 
 // Inicialización de Tablas en PostgreSQL
 const initDB = async () => {
@@ -66,7 +87,7 @@ const initDB = async () => {
         estado TEXT DEFAULT 'Activa'
       );
     `);
-    console.log('Tablas inicializadas correctamente en PostgreSQL.');
+    console.log('Tablas inicializadas correctamente en PostgreSQL con soporte para cifrado.');
   } catch (err) {
     console.error('Error al inicializar PostgreSQL:', err.message);
   }
@@ -76,10 +97,10 @@ initDB();
 
 // Ruta Raíz
 app.get('/', (req, res) => {
-  res.send('API Telemedicina Ecuador con PostgreSQL corriendo correctamente.');
+  res.send('API Telemedicina Ecuador segura con JWT y Bcrypt corriendo correctamente.');
 });
 
-// POST /api/login
+// POST /api/login (Seguro con Bcrypt y JWT)
 app.post('/api/login', async (req, res) => {
   const { identificador, password, rol } = req.body;
 
@@ -93,37 +114,63 @@ app.post('/api/login', async (req, res) => {
   try {
     const sql = `
       SELECT * FROM profesionales 
-      WHERE (cedula = $1 OR correo = $2) AND password = $3 AND UPPER(rol) = UPPER($4)
+      WHERE (cedula = $1 OR correo = $2) AND UPPER(rol) = UPPER($3)
     `;
-    const resultado = await pool.query(sql, [identificador, identificador, password, rol]);
+    const resultado = await pool.query(sql, [identificador, identificador, rol]);
 
-    if (resultado.rows.length > 0) {
-      const usuario = resultado.rows[0];
-      return res.status(200).json({
-        exito: true,
-        mensaje: 'Acceso autorizado',
-        usuario: {
-          id: usuario.id,
-          nombre: usuario.nombre,
-          cedula: usuario.cedula,
-          correo: usuario.correo,
-          rol: usuario.rol,
-          senescyt: usuario.senescyt || '',
-        },
-      });
-    } else {
+    if (resultado.rows.length === 0) {
       return res.status(401).json({
         exito: false,
         mensaje: 'Credenciales o rol incorrectos.',
       });
     }
+
+    const usuario = resultado.rows[0];
+
+    // Verificar si la contraseña coincide con Bcrypt
+    let passwordValida = await bcrypt.compare(password, usuario.password);
+
+    // Migración transparente: Si la clave antigua estaba en texto plano
+    if (!passwordValida && usuario.password === password) {
+      passwordValida = true;
+      const hashedNUEVA = await bcrypt.hash(password, 10);
+      await pool.query('UPDATE profesionales SET password = $1 WHERE id = $2', [hashedNUEVA, usuario.id]);
+    }
+
+    if (!passwordValida) {
+      return res.status(401).json({
+        exito: false,
+        mensaje: 'Credenciales o rol incorrectos.',
+      });
+    }
+
+    // Generar Token JWT válido por 24 horas
+    const token = jwt.sign(
+      { id: usuario.id, cedula: usuario.cedula, rol: usuario.rol },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    return res.status(200).json({
+      exito: true,
+      mensaje: 'Acceso autorizado',
+      token: token,
+      usuario: {
+        id: usuario.id,
+        nombre: usuario.nombre,
+        cedula: usuario.cedula,
+        correo: usuario.correo,
+        rol: usuario.rol,
+        senescyt: usuario.senescyt || '',
+      },
+    });
   } catch (err) {
     console.error('Error BD:', err.message);
     return res.status(500).json({ exito: false, mensaje: 'Error interno del servidor.' });
   }
 });
 
-// POST /api/profesionales - Registro
+// POST /api/profesionales - Registro cifrado
 app.post('/api/profesionales', async (req, res) => {
   const { nombre, cedula, correo, password, rol, senescyt } = req.body;
 
@@ -135,6 +182,9 @@ app.post('/api/profesionales', async (req, res) => {
   }
 
   try {
+    // Cifrado de contraseña con Bcrypt (Salt rounds = 10)
+    const passwordHashed = await bcrypt.hash(password, 10);
+
     const sql = `
       INSERT INTO profesionales (nombre, cedula, correo, password, rol, senescyt) 
       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
@@ -143,15 +193,25 @@ app.post('/api/profesionales', async (req, res) => {
       nombre,
       cedula,
       correo,
-      password,
+      passwordHashed,
       rol,
       senescyt || '',
     ]);
 
+    const nuevoId = resultado.rows[0].id;
+
+    // Generar token JWT automático para el nuevo registro
+    const token = jwt.sign(
+      { id: nuevoId, cedula, rol },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
     return res.status(201).json({
       exito: true,
       mensaje: 'Profesional registrado con éxito',
-      id: resultado.rows[0].id,
+      token: token,
+      id: nuevoId,
     });
   } catch (err) {
     if (err.message.includes('unique constraint') || err.code === '23505') {
@@ -228,7 +288,7 @@ app.post('/api/citas', async (req, res) => {
   }
 });
 
-// GET /api/atenciones - Obtener
+// GET /api/atenciones - Obtener Triajes
 app.get('/api/atenciones', async (req, res) => {
   try {
     const sql = `SELECT * FROM atenciones ORDER BY id DESC`;

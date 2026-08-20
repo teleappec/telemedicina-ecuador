@@ -3,8 +3,18 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String baseUrl = 'https://telemedicina-ecuador.onrender.com/api';
+  static String? _tokenSesion;
 
-  /// Inicia sesión con Cédula/Correo, Contraseña y Rol
+  /// Retorna las cabeceras HTTP necesarias (incluyendo JWT Token)
+  static Map<String, String> _obtenerHeaders() {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (_tokenSesion != null && _tokenSesion!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_tokenSesion';
+    }
+    return headers;
+  }
+
+  /// Inicia sesión con Cédula/Correo, Contraseña cifrada y Rol
   static Future<Map<String, dynamic>> iniciarSesion({
     required String identificador,
     required String password,
@@ -27,9 +37,11 @@ class ApiService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
+        _tokenSesion = data['token'];
         return {
           'exito': true,
           'usuario': data['usuario'],
+          'token': data['token'],
           'mensaje': data['mensaje'] ?? 'Acceso autorizado',
         };
       } else {
@@ -63,6 +75,9 @@ class ApiService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        if (data['token'] != null) {
+          _tokenSesion = data['token'];
+        }
         return {'exito': true, 'mensaje': 'Registro exitoso'};
       } else {
         return {
@@ -82,7 +97,9 @@ class ApiService {
   static Future<List<dynamic>> obtenerCitas() async {
     try {
       final url = Uri.parse('$baseUrl/citas');
-      final response = await http.get(url).timeout(const Duration(seconds: 30));
+      final response = await http
+          .get(url, headers: _obtenerHeaders())
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -101,11 +118,7 @@ class ApiService {
     try {
       final url = Uri.parse('$baseUrl/citas');
       final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(datosCita),
-          )
+          .post(url, headers: _obtenerHeaders(), body: jsonEncode(datosCita))
           .timeout(const Duration(seconds: 40));
 
       final data = jsonDecode(response.body);
@@ -127,7 +140,9 @@ class ApiService {
   static Future<List<dynamic>> obtenerAtenciones() async {
     try {
       final url = Uri.parse('$baseUrl/atenciones');
-      final response = await http.get(url).timeout(const Duration(seconds: 30));
+      final response = await http
+          .get(url, headers: _obtenerHeaders())
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -146,11 +161,7 @@ class ApiService {
     try {
       final url = Uri.parse('$baseUrl/atenciones');
       final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(datosTriaje),
-          )
+          .post(url, headers: _obtenerHeaders(), body: jsonEncode(datosTriaje))
           .timeout(const Duration(seconds: 40));
 
       final data = jsonDecode(response.body);
@@ -172,7 +183,9 @@ class ApiService {
   static Future<List<dynamic>> obtenerBrigadas() async {
     try {
       final url = Uri.parse('$baseUrl/brigadas');
-      final response = await http.get(url).timeout(const Duration(seconds: 30));
+      final response = await http
+          .get(url, headers: _obtenerHeaders())
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -191,11 +204,7 @@ class ApiService {
     try {
       final url = Uri.parse('$baseUrl/brigadas');
       final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(datosBrigada),
-          )
+          .post(url, headers: _obtenerHeaders(), body: jsonEncode(datosBrigada))
           .timeout(const Duration(seconds: 40));
 
       final data = jsonDecode(response.body);
