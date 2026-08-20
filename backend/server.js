@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,103 +9,96 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Conexión a la Base de Datos SQLite
-const db = new sqlite3.Database('./telemedicina.db', (err) => {
-  if (err) {
-    console.error('Error al conectar BD:', err.message);
-  } else {
-    console.log('Conectado a la base de datos SQLite.');
+// Configuración de la conexión PostgreSQL
+const isProduction = process.env.DATABASE_URL ? true : false;
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/telemedicina',
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
+});
+
+// Inicialización de Tablas en PostgreSQL
+const initDB = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS profesionales (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT,
+        cedula TEXT UNIQUE,
+        correo TEXT UNIQUE,
+        password TEXT,
+        rol TEXT,
+        senescyt TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS citas (
+        id SERIAL PRIMARY KEY,
+        paciente TEXT,
+        cedula_paciente TEXT,
+        fecha TEXT,
+        hora TEXT,
+        especialidad TEXT,
+        motivo TEXT,
+        estado TEXT DEFAULT 'Pendiente'
+      );
+
+      CREATE TABLE IF NOT EXISTS atenciones (
+        id SERIAL PRIMARY KEY,
+        paciente TEXT,
+        cedula_paciente TEXT,
+        presion_arterial TEXT,
+        frecuencia_cardiaca TEXT,
+        temperatura TEXT,
+        saturacion_oxigeno TEXT,
+        clasificacion TEXT,
+        observaciones TEXT,
+        fecha TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS brigadas (
+        id SERIAL PRIMARY KEY,
+        nombre_brigada TEXT,
+        lugar TEXT,
+        latitud REAL,
+        longitud REAL,
+        fecha TEXT,
+        observaciones TEXT,
+        estado TEXT DEFAULT 'Activa'
+      );
+    `);
+    console.log('Tablas inicializadas correctamente en PostgreSQL.');
+  } catch (err) {
+    console.error('Error al inicializar PostgreSQL:', err.message);
   }
-});
+};
 
-// Inicialización de Tablas
-db.serialize(() => {
-  // Tabla Profesionales
-  db.run(`
-    CREATE TABLE IF NOT EXISTS profesionales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nombre TEXT,
-      cedula TEXT UNIQUE,
-      correo TEXT UNIQUE,
-      password TEXT,
-      rol TEXT,
-      senescyt TEXT
-    )
-  `);
-
-  // Tabla Citas Médicas
-  db.run(`
-    CREATE TABLE IF NOT EXISTS citas (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      paciente TEXT,
-      cedula_paciente TEXT,
-      fecha TEXT,
-      hora TEXT,
-      especialidad TEXT,
-      motivo TEXT,
-      estado TEXT DEFAULT 'Pendiente'
-    )
-  `);
-
-  // Tabla Triaje y Atenciones de Enfermería
-  db.run(`
-    CREATE TABLE IF NOT EXISTS atenciones (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      paciente TEXT,
-      cedula_paciente TEXT,
-      presion_arterial TEXT,
-      frecuencia_cardiaca TEXT,
-      temperatura TEXT,
-      saturacion_oxigeno TEXT,
-      clasificacion TEXT,
-      observaciones TEXT,
-      fecha TEXT
-    )
-  `);
-
-  // Tabla Brigadas Médicas y GPS
-  db.run(`
-    CREATE TABLE IF NOT EXISTS brigadas (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nombre_brigada TEXT,
-      lugar TEXT,
-      latitud REAL,
-      longitud REAL,
-      fecha TEXT,
-      observaciones TEXT,
-      estado TEXT DEFAULT 'Activa'
-    )
-  `);
-});
+initDB();
 
 // Ruta Raíz
 app.get('/', (req, res) => {
-  res.send('API Telemedicina Ecuador corriendo correctamente.');
+  res.send('API Telemedicina Ecuador con PostgreSQL corriendo correctamente.');
 });
 
-// POST /api/login - Permite ingresar con Cédula o Correo
-app.post('/api/login', (req, res) => {
+// POST /api/login
+app.post('/api/login', async (req, res) => {
   const { identificador, password, rol } = req.body;
 
   if (!identificador || !password || !rol) {
     return res.status(400).json({
       exito: false,
-      mensaje: 'Todos los campos son obligatorios.'
+      mensaje: 'Todos los campos son obligatorios.',
     });
   }
 
-  const sql = `
-    SELECT * FROM profesionales 
-    WHERE (cedula = ? OR correo = ?) AND password = ? AND UPPER(rol) = UPPER(?)
-  `;
+  try {
+    const sql = `
+      SELECT * FROM profesionales 
+      WHERE (cedula = $1 OR correo = $2) AND password = $3 AND UPPER(rol) = UPPER($4)
+    `;
+    const resultado = await pool.query(sql, [identificador, identificador, password, rol]);
 
-  db.get(sql, [identificador, identificador, password, rol], (err, usuario) => {
-    if (err) {
-      console.error('Error BD:', err.message);
-      return res.status(500).json({ exito: false, mensaje: 'Error interno del servidor.' });
-    }
-
-    if (usuario) {
+    if (resultado.rows.length > 0) {
+      const usuario = resultado.rows[0];
       return res.status(200).json({
         exito: true,
         mensaje: 'Acceso autorizado',
@@ -124,11 +117,14 @@ app.post('/api/login', (req, res) => {
         mensaje: 'Credenciales o rol incorrectos.',
       });
     }
-  });
+  } catch (err) {
+    console.error('Error BD:', err.message);
+    return res.status(500).json({ exito: false, mensaje: 'Error interno del servidor.' });
+  }
 });
 
-// POST /api/profesionales - Registro de nuevo profesional
-app.post('/api/profesionales', (req, res) => {
+// POST /api/profesionales - Registro
+app.post('/api/profesionales', async (req, res) => {
   const { nombre, cedula, correo, password, rol, senescyt } = req.body;
 
   if (!nombre || !cedula || !correo || !password || !rol) {
@@ -138,55 +134,64 @@ app.post('/api/profesionales', (req, res) => {
     });
   }
 
-  const sql = `INSERT INTO profesionales (nombre, cedula, correo, password, rol, senescyt) VALUES (?, ?, ?, ?, ?, ?)`;
-
-  db.run(sql, [nombre, cedula, correo, password, rol, senescyt || ''], function (err) {
-    if (err) {
-      if (err.message.includes('UNIQUE constraint failed')) {
-        return res.status(400).json({
-          exito: false,
-          mensaje: 'La cédula o el correo ya se encuentran registrados.',
-        });
-      }
-      console.error('Error insert:', err.message);
-      return res.status(500).json({
-        exito: false,
-        mensaje: 'Error al registrar el profesional en la base de datos.',
-      });
-    }
+  try {
+    const sql = `
+      INSERT INTO profesionales (nombre, cedula, correo, password, rol, senescyt) 
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+    `;
+    const resultado = await pool.query(sql, [
+      nombre,
+      cedula,
+      correo,
+      password,
+      rol,
+      senescyt || '',
+    ]);
 
     return res.status(201).json({
       exito: true,
       mensaje: 'Profesional registrado con éxito',
-      id: this.lastID,
+      id: resultado.rows[0].id,
     });
-  });
-});
-
-// GET /api/profesionales - Listar profesionales
-app.get('/api/profesionales', (req, res) => {
-  const sql = `SELECT id, nombre, cedula, correo, rol, senescyt FROM profesionales`;
-  db.all(sql, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ exito: false, mensaje: err.message });
+  } catch (err) {
+    if (err.message.includes('unique constraint') || err.code === '23505') {
+      return res.status(400).json({
+        exito: false,
+        mensaje: 'La cédula o el correo ya se encuentran registrados.',
+      });
     }
-    res.status(200).json({ exito: true, profesionales: rows });
-  });
+    console.error('Error insert:', err.message);
+    return res.status(500).json({
+      exito: false,
+      mensaje: 'Error al registrar el profesional en la base de datos.',
+    });
+  }
 });
 
-// GET /api/citas - Listar citas
-app.get('/api/citas', (req, res) => {
-  const sql = `SELECT * FROM citas ORDER BY id DESC`;
-  db.all(sql, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ exito: false, mensaje: 'Error al consultar citas.' });
-    }
-    res.status(200).json({ exito: true, citas: rows });
-  });
+// GET /api/profesionales - Listar
+app.get('/api/profesionales', async (req, res) => {
+  try {
+    const sql = `SELECT id, nombre, cedula, correo, rol, senescyt FROM profesionales`;
+    const resultado = await pool.query(sql);
+    res.status(200).json({ exito: true, profesionales: resultado.rows });
+  } catch (err) {
+    res.status(500).json({ exito: false, mensaje: err.message });
+  }
 });
 
-// POST /api/citas - Agendar nueva cita
-app.post('/api/citas', (req, res) => {
+// GET /api/citas - Listar
+app.get('/api/citas', async (req, res) => {
+  try {
+    const sql = `SELECT * FROM citas ORDER BY id DESC`;
+    const resultado = await pool.query(sql);
+    res.status(200).json({ exito: true, citas: resultado.rows });
+  } catch (err) {
+    res.status(500).json({ exito: false, mensaje: 'Error al consultar citas.' });
+  }
+});
+
+// POST /api/citas - Agendar
+app.post('/api/citas', async (req, res) => {
   const { paciente, cedula_paciente, fecha, hora, especialidad, motivo } = req.body;
 
   if (!paciente || !fecha || !hora) {
@@ -196,50 +201,46 @@ app.post('/api/citas', (req, res) => {
     });
   }
 
-  const sql = `
-    INSERT INTO citas (paciente, cedula_paciente, fecha, hora, especialidad, motivo)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `;
-
-  db.run(
-    sql,
-    [
+  try {
+    const sql = `
+      INSERT INTO citas (paciente, cedula_paciente, fecha, hora, especialidad, motivo)
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+    `;
+    const resultado = await pool.query(sql, [
       paciente,
       cedula_paciente || '',
       fecha,
       hora,
       especialidad || 'Medicina General',
       motivo || 'Consulta Médica General',
-    ],
-    function (err) {
-      if (err) {
-        return res.status(500).json({
-          exito: false,
-          mensaje: 'Error en la base de datos al agendar cita.',
-        });
-      }
-      res.status(201).json({
-        exito: true,
-        mensaje: 'Cita agendada correctamente',
-        id: this.lastID,
-      });
-    }
-  );
+    ]);
+
+    res.status(201).json({
+      exito: true,
+      mensaje: 'Cita agendada correctamente',
+      id: resultado.rows[0].id,
+    });
+  } catch (err) {
+    res.status(500).json({
+      exito: false,
+      mensaje: 'Error en la base de datos al agendar cita.',
+    });
+  }
 });
 
-// GET /api/atenciones - Obtener fichas de triaje
-app.get('/api/atenciones', (req, res) => {
-  const sql = `SELECT * FROM atenciones ORDER BY id DESC`;
-  db.all(sql, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ exito: false, mensaje: 'Error al consultar registros de triaje.' });
-    }
-    res.status(200).json({ exito: true, atenciones: rows });
-  });
+// GET /api/atenciones - Obtener
+app.get('/api/atenciones', async (req, res) => {
+  try {
+    const sql = `SELECT * FROM atenciones ORDER BY id DESC`;
+    const resultado = await pool.query(sql);
+    res.status(200).json({ exito: true, atenciones: resultado.rows });
+  } catch (err) {
+    res.status(500).json({ exito: false, mensaje: 'Error al consultar registros de triaje.' });
+  }
 });
 
-// POST /api/atenciones - Registrar nueva ficha de triaje
-app.post('/api/atenciones', (req, res) => {
+// POST /api/atenciones - Registrar Triaje
+app.post('/api/atenciones', async (req, res) => {
   const {
     paciente,
     cedula_paciente,
@@ -248,7 +249,7 @@ app.post('/api/atenciones', (req, res) => {
     temperatura,
     saturacion_oxigeno,
     clasificacion,
-    observaciones
+    observaciones,
   } = req.body;
 
   if (!paciente || !clasificacion) {
@@ -260,15 +261,13 @@ app.post('/api/atenciones', (req, res) => {
 
   const fechaHoy = new Date().toISOString().split('T')[0];
 
-  const sql = `
-    INSERT INTO atenciones 
-    (paciente, cedula_paciente, presion_arterial, frecuencia_cardiaca, temperatura, saturacion_oxigeno, clasificacion, observaciones, fecha)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.run(
-    sql,
-    [
+  try {
+    const sql = `
+      INSERT INTO atenciones 
+      (paciente, cedula_paciente, presion_arterial, frecuencia_cardiaca, temperatura, saturacion_oxigeno, clasificacion, observaciones, fecha)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+    `;
+    const resultado = await pool.query(sql, [
       paciente,
       cedula_paciente || '',
       presion_arterial || '120/80',
@@ -278,36 +277,34 @@ app.post('/api/atenciones', (req, res) => {
       clasificacion,
       observaciones || '',
       fechaHoy,
-    ],
-    function (err) {
-      if (err) {
-        return res.status(500).json({
-          exito: false,
-          mensaje: 'Error al guardar la ficha de triaje en la BD.',
-        });
-      }
-      res.status(201).json({
-        exito: true,
-        mensaje: 'Triaje registrado correctamente',
-        id: this.lastID,
-      });
-    }
-  );
+    ]);
+
+    res.status(201).json({
+      exito: true,
+      mensaje: 'Triaje registrado correctamente',
+      id: resultado.rows[0].id,
+    });
+  } catch (err) {
+    res.status(500).json({
+      exito: false,
+      mensaje: 'Error al guardar la ficha de triaje en la BD.',
+    });
+  }
 });
 
-// GET /api/brigadas - Listar brigadas médicas
-app.get('/api/brigadas', (req, res) => {
-  const sql = `SELECT * FROM brigadas ORDER BY id DESC`;
-  db.all(sql, [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ exito: false, mensaje: 'Error al consultar brigadas.' });
-    }
-    res.status(200).json({ exito: true, brigadas: rows });
-  });
+// GET /api/brigadas - Listar
+app.get('/api/brigadas', async (req, res) => {
+  try {
+    const sql = `SELECT * FROM brigadas ORDER BY id DESC`;
+    const resultado = await pool.query(sql);
+    res.status(200).json({ exito: true, brigadas: resultado.rows });
+  } catch (err) {
+    res.status(500).json({ exito: false, mensaje: 'Error al consultar brigadas.' });
+  }
 });
 
-// POST /api/brigadas - Registrar nueva brigada médica con GPS
-app.post('/api/brigadas', (req, res) => {
+// POST /api/brigadas - Registrar
+app.post('/api/brigadas', async (req, res) => {
   const { nombre_brigada, lugar, latitud, longitud, fecha, observaciones } = req.body;
 
   if (!nombre_brigada || !lugar || !fecha) {
@@ -317,35 +314,31 @@ app.post('/api/brigadas', (req, res) => {
     });
   }
 
-  const sql = `
-    INSERT INTO brigadas (nombre_brigada, lugar, latitud, longitud, fecha, observaciones)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `;
-
-  db.run(
-    sql,
-    [
+  try {
+    const sql = `
+      INSERT INTO brigadas (nombre_brigada, lugar, latitud, longitud, fecha, observaciones)
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+    `;
+    const resultado = await pool.query(sql, [
       nombre_brigada,
       lugar,
       latitud || -0.1807,
       longitud || -78.4678,
       fecha,
       observaciones || '',
-    ],
-    function (err) {
-      if (err) {
-        return res.status(500).json({
-          exito: false,
-          mensaje: 'Error al registrar la brigada en la base de datos.',
-        });
-      }
-      res.status(201).json({
-        exito: true,
-        mensaje: 'Brigada agendada exitosamente',
-        id: this.lastID,
-      });
-    }
-  );
+    ]);
+
+    res.status(201).json({
+      exito: true,
+      mensaje: 'Brigada agendada exitosamente',
+      id: resultado.rows[0].id,
+    });
+  } catch (err) {
+    res.status(500).json({
+      exito: false,
+      mensaje: 'Error al registrar la brigada en la base de datos.',
+    });
+  }
 });
 
 // Arrancar Servidor
