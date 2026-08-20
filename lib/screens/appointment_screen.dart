@@ -1,246 +1,242 @@
-// lib/screens/appointment_screen.dart
 import 'package:flutter/material.dart';
-import 'payment_screen.dart';
+import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class AppointmentScreen extends StatefulWidget {
-  final String? tipoServicio; // 'Teleconsulta' o 'Visita Domiciliaria'
-
-  const AppointmentScreen({super.key, this.tipoServicio = 'Teleconsulta'});
+  const AppointmentScreen({super.key});
 
   @override
   State<AppointmentScreen> createState() => _AppointmentScreenState();
 }
 
 class _AppointmentScreenState extends State<AppointmentScreen> {
-  String _especialidadSeleccionada = 'Medicina General';
-  String _doctorSeleccionado = 'Dr. Carlos Mendoza';
-  DateTime _fechaSeleccionada = DateTime.now().add(const Duration(days: 1));
-  TimeOfDay _horaSeleccionada = const TimeOfDay(hour: 10, minute: 0);
+  List<dynamic> _citas = [];
+  bool _cargando = true;
 
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController _pacienteController = TextEditingController();
+  final TextEditingController _cedulaController = TextEditingController();
+  final TextEditingController _fechaController = TextEditingController();
+  final TextEditingController _horaController = TextEditingController();
+  final TextEditingController _motivoController = TextEditingController();
+
+  String _especialidadSeleccionada = 'Medicina General';
   final List<String> _especialidades = [
     'Medicina General',
     'Pediatría',
-    'Cardiología',
     'Ginecología',
-    'Dermatología',
+    'Cardiología',
+    'Odontología',
   ];
 
-  final Map<String, List<String>> _doctoresPorEspecialidad = {
-    'Medicina General': ['Dr. Carlos Mendoza', 'Dra. Andrea Silva'],
-    'Pediatría': ['Dr. Roberto Gómez', 'Dra. Elena Ramos'],
-    'Cardiología': ['Dr. Fernando Torres'],
-    'Ginecología': ['Dra. Patricia Ortiz'],
-    'Dermatología': ['Dr. Gabriel Castro'],
-  };
-
-  double get _precioServicio {
-    return widget.tipoServicio == 'Visita Domiciliaria' ? 40.0 : 25.0;
+  @override
+  void initState() {
+    super.initState();
+    _cargarCitas();
   }
 
-  Future<void> _seleccionarFecha(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _fechaSeleccionada,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 60)),
-    );
-    if (picked != null && picked != _fechaSeleccionada) {
-      setState(() {
-        _fechaSeleccionada = picked;
-      });
-    }
+  Future<void> _cargarCitas() async {
+    setState(() => _cargando = true);
+    final citas = await ApiService.obtenerCitas();
+    if (!mounted) return;
+    setState(() {
+      _citas = citas;
+      _cargando = false;
+    });
   }
 
-  Future<void> _seleccionarHora(BuildContext context) async {
-    final TimeOfDay? picked = await showTimePicker(
+  Future<void> _mostrarModalAgendar() async {
+    showModalBottomSheet(
       context: context,
-      initialTime: _horaSeleccionada,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            top: 20,
+            left: 20,
+            right: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Agendar Nueva Cita Médica',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _pacienteController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Paciente',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) =>
+                        v == null || v.isEmpty ? 'Campo requerido' : null,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _cedulaController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Cédula Paciente',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: _especialidadSeleccionada,
+                    decoration: const InputDecoration(
+                      labelText: 'Especialidad',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _especialidades
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null)
+                        setState(() => _especialidadSeleccionada = val);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _fechaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Fecha (AAAA-MM-DD)',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) =>
+                              v == null || v.isEmpty ? 'Requerido' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _horaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Hora (HH:MM)',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) =>
+                              v == null || v.isEmpty ? 'Requerido' : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _motivoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Motivo de Consulta',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        if (!_formKey.currentState!.validate()) return;
+                        Navigator.pop(context);
+
+                        final res = await ApiService.agendarCita({
+                          'paciente': _pacienteController.text.trim(),
+                          'cedula_paciente': _cedulaController.text.trim(),
+                          'especialidad': _especialidadSeleccionada,
+                          'fecha': _fechaController.text.trim(),
+                          'hora': _horaController.text.trim(),
+                          'motivo': _motivoController.text.trim(),
+                        });
+
+                        if (res['exito'] == true) {
+                          NotificationService.mostrarNotificacion(
+                            titulo: 'Cita Agendada 📅',
+                            mensaje:
+                                'La cita ha sido registrada en el servidor.',
+                            icono: Icons.calendar_today,
+                            colorFondo: Colors.teal,
+                          );
+                          _pacienteController.clear();
+                          _cedulaController.clear();
+                          _fechaController.clear();
+                          _horaController.clear();
+                          _motivoController.clear();
+                          _cargarCitas();
+                        }
+                      },
+                      child: const Text('GUARDAR CITA'),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
-    if (picked != null && picked != _horaSeleccionada) {
-      setState(() {
-        _horaSeleccionada = picked;
-      });
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final doctoresDisponibles =
-        _doctoresPorEspecialidad[_especialidadSeleccionada] ??
-        ['Dr. Carlos Mendoza'];
-
-    if (!doctoresDisponibles.contains(_doctorSeleccionado)) {
-      _doctorSeleccionado = doctoresDisponibles.first;
-    }
-
-    final fechaFormateada =
-        '${_fechaSeleccionada.day.toString().padLeft(2, '0')}/${_fechaSeleccionada.month.toString().padLeft(2, '0')}/${_fechaSeleccionada.year}';
-    final horaFormateada = _horaSeleccionada.format(context);
-
     return Scaffold(
-      appBar: AppBar(title: Text('Agendar ${widget.tipoServicio}')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Selección de Especialidad
-            const Text(
-              '1. Seleccione Especialidad',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _especialidadSeleccionada,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.medical_services),
-              ),
-              items: _especialidades.map((esp) {
-                return DropdownMenuItem(value: esp, child: Text(esp));
-              }).toList(),
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _especialidadSeleccionada = val;
-                  });
-                }
+      appBar: AppBar(
+        title: const Text('Gestión de Citas Médicas'),
+        backgroundColor: Colors.teal,
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _cargarCitas),
+        ],
+      ),
+      body: _cargando
+          ? const Center(child: CircularProgressIndicator())
+          : _citas.isEmpty
+          ? const Center(child: Text('No hay citas programadas.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: _citas.length,
+              itemBuilder: (context, index) {
+                final cita = _citas[index];
+                return Card(
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.teal,
+                      child: Icon(Icons.person, color: Colors.white),
+                    ),
+                    title: Text(
+                      cita['paciente'] ?? 'Sin Nombre',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      '${cita['especialidad']} - ${cita['fecha']} | ${cita['hora']}\nMotivo: ${cita['motivo'] ?? "N/A"}',
+                    ),
+                    trailing: Chip(
+                      label: Text(cita['estado'] ?? 'Pendiente'),
+                      backgroundColor: Colors.teal.shade50,
+                    ),
+                  ),
+                );
               },
             ),
-            const SizedBox(height: 20),
-
-            // Selección de Médico
-            const Text(
-              '2. Seleccione Médico',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _doctorSeleccionado,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.person)),
-              items: doctoresDisponibles.map((doc) {
-                return DropdownMenuItem(value: doc, child: Text(doc));
-              }).toList(),
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _doctorSeleccionado = val;
-                  });
-                }
-              },
-            ),
-            const SizedBox(height: 20),
-
-            // Selección de Fecha y Hora
-            const Text(
-              '3. Fecha y Hora de Atención',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.calendar_today),
-                    label: Text(fechaFormateada),
-                    onPressed: () => _seleccionarFecha(context),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.access_time),
-                    label: Text(horaFormateada),
-                    onPressed: () => _seleccionarHora(context),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // Tarjeta con el Resumen del Pago
-            Card(
-              color: Colors.teal.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Colors.teal),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Servicio:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(widget.tipoServicio ?? 'Teleconsulta'),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Médico:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(_doctorSeleccionado),
-                      ],
-                    ),
-                    const Divider(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Total a Pagar:',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '\$${_precioServicio.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Botón hacia pasarela de pago
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.payment),
-                label: const Text('CONTINUAR AL PAGO'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PaymentScreen(
-                        doctorNombre: _doctorSeleccionado,
-                        especialidad: _especialidadSeleccionada,
-                        servicioNombre: widget.tipoServicio ?? 'Teleconsulta',
-                        monto: _precioServicio,
-                        fecha: fechaFormateada,
-                        hora: horaFormateada,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _mostrarModalAgendar,
+        backgroundColor: Colors.teal,
+        icon: const Icon(Icons.add),
+        label: const Text('Nueva Cita'),
       ),
     );
   }

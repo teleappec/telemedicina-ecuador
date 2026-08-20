@@ -5,10 +5,11 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Conexión SQLite
+// Conexión a la Base de Datos SQLite
 const db = new sqlite3.Database('./telemedicina.db', (err) => {
   if (err) {
     console.error('Error al conectar BD:', err.message);
@@ -17,8 +18,9 @@ const db = new sqlite3.Database('./telemedicina.db', (err) => {
   }
 });
 
-// Crear tabla con campo 'correo'
+// Inicialización de Tablas
 db.serialize(() => {
+  // Tabla Profesionales
   db.run(`
     CREATE TABLE IF NOT EXISTS profesionales (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,15 +32,30 @@ db.serialize(() => {
       senescyt TEXT
     )
   `);
+
+  // Tabla Citas Médicas
+  db.run(`
+    CREATE TABLE IF NOT EXISTS citas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      paciente TEXT,
+      cedula_paciente TEXT,
+      fecha TEXT,
+      hora TEXT,
+      especialidad TEXT,
+      motivo TEXT,
+      estado TEXT DEFAULT 'Pendiente'
+    )
+  `);
 });
 
+// Ruta Raíz
 app.get('/', (req, res) => {
-  res.send('API Telemedicina Ecuador funcionando.');
+  res.send('API Telemedicina Ecuador corriendo correctamente.');
 });
 
 // POST /api/login - Permite ingresar con Cédula o Correo
 app.post('/api/login', (req, res) => {
-  const { identificador, password, rol } = req.body; // identificador = cedula o correo
+  const { identificador, password, rol } = req.body;
 
   if (!identificador || !password || !rol) {
     return res.status(400).json({
@@ -116,6 +133,71 @@ app.post('/api/profesionales', (req, res) => {
   });
 });
 
+// GET /api/profesionales - Listar profesionales
+app.get('/api/profesionales', (req, res) => {
+  const sql = `SELECT id, nombre, cedula, correo, rol, senescyt FROM profesionales`;
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ exito: false, mensaje: err.message });
+    }
+    res.status(200).json({ exito: true, profesionales: rows });
+  });
+});
+
+// GET /api/citas - Listar citas
+app.get('/api/citas', (req, res) => {
+  const sql = `SELECT * FROM citas ORDER BY id DESC`;
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ exito: false, mensaje: 'Error al consultar citas.' });
+    }
+    res.status(200).json({ exito: true, citas: rows });
+  });
+});
+
+// POST /api/citas - Agendar nueva cita
+app.post('/api/citas', (req, res) => {
+  const { paciente, cedula_paciente, fecha, hora, especialidad, motivo } = req.body;
+
+  if (!paciente || !fecha || !hora) {
+    return res.status(400).json({
+      exito: false,
+      mensaje: 'Paciente, fecha y hora son obligatorios.',
+    });
+  }
+
+  const sql = `
+    INSERT INTO citas (paciente, cedula_paciente, fecha, hora, especialidad, motivo)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(
+    sql,
+    [
+      paciente,
+      cedula_paciente || '',
+      fecha,
+      hora,
+      especialidad || 'Medicina General',
+      motivo || 'Consulta Médica General',
+    ],
+    function (err) {
+      if (err) {
+        return res.status(500).json({
+          exito: false,
+          mensaje: 'Error en la base de datos al agendar cita.',
+        });
+      }
+      res.status(201).json({
+        exito: true,
+        mensaje: 'Cita agendada correctamente',
+        id: this.lastID,
+      });
+    }
+  );
+});
+
+// Arrancar Servidor
 app.listen(PORT, () => {
-  console.log(`Servidor en puerto ${PORT}`);
+  console.log(`Servidor Central TeleMedicina corriendo en el puerto ${PORT}`);
 });

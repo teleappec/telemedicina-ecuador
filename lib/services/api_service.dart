@@ -6,7 +6,7 @@ class ApiService {
 
   /// Inicia sesión con Cédula/Correo, Contraseña y Rol
   static Future<Map<String, dynamic>> iniciarSesion({
-    required String identificador, // Cédula o Correo
+    required String identificador,
     required String password,
     required String rol,
   }) async {
@@ -75,6 +75,51 @@ class ApiService {
         'exito': false,
         'mensaje': 'Error de red al conectar con Render.',
       };
+    }
+  }
+
+  /// Obtener todas las citas desde la API
+  static Future<List<dynamic>> obtenerCitas() async {
+    try {
+      final url = Uri.parse('$baseUrl/citas');
+      final response = await http.get(url).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['citas'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Agendar nueva cita
+  static Future<Map<String, dynamic>> agendarCita(
+    Map<String, dynamic> datosCita,
+  ) async {
+    try {
+      final url = Uri.parse('$baseUrl/citas');
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(datosCita),
+          )
+          .timeout(const Duration(seconds: 40));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {'exito': true, 'mensaje': 'Cita agendada exitosamente'};
+      } else {
+        return {
+          'exito': false,
+          'mensaje': data['mensaje'] ?? 'Error al agendar cita',
+        };
+      }
+    } catch (e) {
+      return {'exito': false, 'mensaje': 'Error de conexión con el servidor.'};
     }
   }
 }
