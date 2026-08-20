@@ -1,11 +1,9 @@
-import 'dart:convert';
+// lib/screens/triage_screen.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../api_service.dart';
+import '../services/notification_service.dart';
 
 class TriageScreen extends StatefulWidget {
-  final String nombreMedico;
-  const TriageScreen({super.key, required this.nombreMedico});
+  const TriageScreen({super.key});
 
   @override
   State<TriageScreen> createState() => _TriageScreenState();
@@ -14,326 +12,251 @@ class TriageScreen extends StatefulWidget {
 class _TriageScreenState extends State<TriageScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _cedulaController = TextEditingController();
+  // Datos del Paciente
   final _nombreController = TextEditingController();
-  final _presionController = TextEditingController();
-  final _tempController = TextEditingController();
-  final _oxigenoController = TextEditingController();
+  final _cedulaController = TextEditingController();
+  final _edadController = TextEditingController();
 
-  List<Map<String, dynamic>> _pacientesGuardados = [];
-  bool _estaCargando = false;
+  // Signos Vitales
+  final _paController = TextEditingController(); // Presión Arterial
+  final _fcController = TextEditingController(); // Frecuencia Cardíaca
+  final _frController = TextEditingController(); // Frecuencia Respiratoria
+  final _tempController = TextEditingController(); // Temperatura
+  final _spo2Controller = TextEditingController(); // Saturación de O2
+  final _glucoController = TextEditingController(); // Glucemia
 
-  @override
-  void initState() {
-    super.initState();
-    _cargarPacientesLocales();
-  }
+  // Procedimientos de Enfermería
+  String _procedimiento = 'Control de Signos Vitales';
+  final _notasController = TextEditingController();
 
-  Future<void> _cargarPacientesLocales() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? datosString = prefs.getString('pacientes_offline');
-    if (datosString != null) {
-      setState(() {
-        _pacientesGuardados = List<Map<String, dynamic>>.from(
-          jsonDecode(datosString),
-        );
-      });
-    }
-  }
+  final List<String> _opcionesProcedimientos = [
+    'Control de Signos Vitales',
+    'Curación de Heridas / Postquirúrgico',
+    'Administración de Medicamentos / Inyectología',
+    'Canalización de Vía Periférica / Sueroterapia',
+    'Toma de Muestras de Laboratorio',
+    'Retiro de Puntos / Sondas',
+  ];
 
-  // Evaluación automática de riesgo por semáforo
-  Map<String, dynamic> _calcularGravedad(double temp, int oxigeno) {
-    if (oxigeno <= 89 || temp >= 39.0) {
-      return {'nivel': 'CRÍTICO', 'color': 'ROJO'};
-    } else if ((oxigeno >= 90 && oxigeno <= 94) || temp >= 38.0) {
-      return {'nivel': 'URGENTE', 'color': 'AMARILLO'};
-    } else {
-      return {'nivel': 'ESTABLE', 'color': 'VERDE'};
-    }
-  }
-
-  Future<void> _guardarPacienteLocal() async {
+  void _guardarAtencion() {
     if (_formKey.currentState!.validate()) {
-      final double temp = double.tryParse(_tempController.text) ?? 36.5;
-      final int oxigeno = int.tryParse(_oxigenoController.text) ?? 98;
-
-      final evaluacion = _calcularGravedad(temp, oxigeno);
-
-      final nuevoPaciente = {
-        'cedula': _cedulaController.text,
-        'nombre': _nombreController.text,
-        'presion': _presionController.text,
-        'temp': _tempController.text,
-        'oxigeno': _oxigenoController.text,
-        'prioridad': evaluacion['nivel'],
-        'colorRiesgo': evaluacion['color'],
-        'fecha': DateTime.now().toString(),
-        'atendidoPor': widget.nombreMedico,
-      };
-
-      final prefs = await SharedPreferences.getInstance();
-      _pacientesGuardados.add(nuevoPaciente);
-      await prefs.setString(
-        'pacientes_offline',
-        jsonEncode(_pacientesGuardados),
+      NotificationService.mostrarNotificacion(
+        titulo: 'Registro de Enfermería Exitoso 🩺',
+        mensaje: 'Atención guardada para ${_nombreController.text}.',
+        icono: Icons.check_circle,
+        colorFondo: Colors.indigo.shade800,
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Paciente ${_nombreController.text} registrado con prioridad ${evaluacion['nivel']}.',
-            ),
-            backgroundColor: evaluacion['color'] == 'ROJO'
-                ? Colors.red
-                : (evaluacion['color'] == 'AMARILLO'
-                      ? Colors.orange
-                      : Colors.teal),
-          ),
-        );
-      }
-
-      _cedulaController.clear();
+      _formKey.currentState!.reset();
       _nombreController.clear();
-      _presionController.clear();
+      _cedulaController.clear();
+      _edadController.clear();
+      _paController.clear();
+      _fcController.clear();
+      _frController.clear();
       _tempController.clear();
-      _oxigenoController.clear();
-      setState(() {});
+      _spo2Controller.clear();
+      _glucoController.clear();
+      _notasController.clear();
     }
-  }
-
-  Future<void> _sincronizarConServidor() async {
-    if (_pacientesGuardados.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No hay registros locales para sincronizar.'),
-        ),
-      );
-      return;
-    }
-
-    setState(() => _estaCargando = true);
-
-    final respuesta = await ApiService.sincronizarPacientes(
-      _pacientesGuardados,
-    );
-
-    setState(() => _estaCargando = false);
-
-    if (mounted) {
-      if (respuesta['exito']) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('pacientes_offline');
-        setState(() => _pacientesGuardados.clear());
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(respuesta['mensaje']),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(respuesta['mensaje']),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  void _verRegistrosOffline() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Pacientes Guardados Offline (${_pacientesGuardados.length})',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _pacientesGuardados.isEmpty
-                  ? const Center(
-                      child: Text('No hay registros guardados localmente.'),
-                    )
-                  : ListView.builder(
-                      itemCount: _pacientesGuardados.length,
-                      itemBuilder: (context, index) {
-                        final p = _pacientesGuardados[index];
-                        final color = p['colorRiesgo'] == 'ROJO'
-                            ? Colors.red
-                            : (p['colorRiesgo'] == 'AMARILLO'
-                                  ? Colors.orange
-                                  : Colors.green);
-
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: color,
-                              child: Text(
-                                p['prioridad'] != null &&
-                                        p['prioridad'].toString().isNotEmpty
-                                    ? p['prioridad'][0]
-                                    : 'E',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            title: Text(p['nombre'] ?? 'Sin Nombre'),
-                            subtitle: Text(
-                              'Cédula: ${p['cedula']} | PA: ${p['presion']} | SpO2: ${p['oxigeno']}% | Prioridad: ${p['prioridad']}',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            if (_pacientesGuardados.isNotEmpty)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _estaCargando ? null : _sincronizarConServidor,
-                  icon: const Icon(Icons.cloud_upload),
-                  label: _estaCargando
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('SINCRONIZAR CON EL SERVIDOR'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Triaje - ${widget.nombreMedico}'),
-        backgroundColor: Colors.teal,
+        title: const Text('Módulo de Enfermería & Triaje'),
+        backgroundColor: Colors.indigo.shade800,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: Badge(
-              label: Text('${_pacientesGuardados.length}'),
-              child: const Icon(Icons.sd_storage),
-            ),
-            onPressed: _verRegistrosOffline,
-            tooltip: 'Ver registros locales',
-          ),
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Sección Datos del Paciente
               const Text(
-                'Datos del Paciente',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _cedulaController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Cédula de Identidad',
-                  prefixIcon: Icon(Icons.badge),
-                  border: OutlineInputBorder(),
+                '1. DATOS DEL PACIENTE',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo,
                 ),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Ingrese la cédula' : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _nombreController,
                 decoration: const InputDecoration(
-                  labelText: 'Nombre Completo',
+                  labelText: 'Nombres y Apellidos Completos',
                   prefixIcon: Icon(Icons.person),
                   border: OutlineInputBorder(),
                 ),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Ingrese el nombre' : null,
+                validator: (v) => v!.isEmpty ? 'Requerido' : null,
               ),
-              const SizedBox(height: 24),
-              const Text(
-                'Signos Vitales',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
                     child: TextFormField(
-                      controller: _presionController,
+                      controller: _cedulaController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 10,
                       decoration: const InputDecoration(
-                        labelText: 'Presión (120/80)',
+                        labelText: 'Cédula',
+                        prefixIcon: Icon(Icons.badge),
+                        border: OutlineInputBorder(),
+                        counterText: '',
+                      ),
+                      validator: (v) => v!.length != 10 ? '10 dígitos' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _edadController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Edad (Años)',
+                        prefixIcon: Icon(Icons.cake),
                         border: OutlineInputBorder(),
                       ),
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Requerido' : null,
+                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+              // Sección Signos Vitales
+              const Text(
+                '2. SIGNOS VITALES Y SOMATOMETRÍA',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _paController,
+                      decoration: const InputDecoration(
+                        labelText: 'P. Arterial (mmHg)',
+                        hintText: '120/80',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
                     ),
                   ),
                   const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _fcController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'F. Cardíaca (bpm)',
+                        hintText: '75',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
                   Expanded(
                     child: TextFormField(
                       controller: _tempController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Temp (°C)',
+                        hintText: '36.5',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Requerido' : null,
+                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _spo2Controller,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'SpO2 (%)',
+                        hintText: '98',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _glucoController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Glucemia (mg/dL)',
+                        hintText: '95',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _oxigenoController,
-                keyboardType: TextInputType.number,
+
+              const SizedBox(height: 20),
+              // Sección Procedimiento y Notas
+              const Text(
+                '3. ATENCIÓN Y NOTAS DE ENFERMERÍA',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo,
+                ),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: _procedimiento,
                 decoration: const InputDecoration(
-                  labelText: 'Saturación Oxígeno (%)',
-                  prefixIcon: Icon(Icons.speed),
+                  labelText: 'Procedimiento Principal',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.medical_services),
+                ),
+                items: _opcionesProcedimientos
+                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                    .toList(),
+                onChanged: (v) => setState(() => _procedimiento = v!),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: _notasController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Observaciones / Evolución de Enfermería',
+                  hintText:
+                      'Ej. Paciente refiere alivio de dolor. Vía periférica permeable sin signos de flebitis.',
                   border: OutlineInputBorder(),
                 ),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Requerido' : null,
               ),
               const SizedBox(height: 24),
+
               SizedBox(
                 width: double.infinity,
                 height: 50,
-                child: ElevatedButton(
-                  onPressed: _guardarPacienteLocal,
+                child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    backgroundColor: Colors.indigo.shade800,
+                    foregroundColor: Colors.white,
                   ),
-                  child: const Text(
-                    'GUARDAR PACIENTE (OFFLINE)',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  onPressed: _guardarAtencion,
+                  icon: const Icon(Icons.save),
+                  label: const Text('REGISTRAR ATENCIÓN DE ENFERMERÍA'),
                 ),
               ),
             ],

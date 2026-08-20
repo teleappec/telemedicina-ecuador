@@ -1,23 +1,25 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
+import 'services/notification_service.dart';
+import 'theme/app_theme.dart';
 import 'screens/role_selection_screen.dart';
 
 void main() {
-  runApp(const TelemedApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const TelemedicinaApp());
 }
 
-class TelemedApp extends StatelessWidget {
-  const TelemedApp({super.key});
+class TelemedicinaApp extends StatelessWidget {
+  const TelemedicinaApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TeleMedicina Ecuador',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
-      ),
-      home: const RoleSelectionScreen(),
+      title: 'Telemedicina Ecuador',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: NotificationService.messengerKey,
+      theme: AppTheme.lightTheme,
+      home: const RoleSelectionScreen(),
     );
   }
 }

@@ -1,14 +1,13 @@
+// lib/screens/teleconsultation_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class TeleconsultationScreen extends StatefulWidget {
-  final String especialidad;
   final String doctorNombre;
 
   const TeleconsultationScreen({
     super.key,
-    this.especialidad = 'Medicina General',
-    this.doctorNombre = 'Dra. María Elena Paredes',
+    this.doctorNombre = 'Dr. Carlos Mendoza',
   });
 
   @override
@@ -16,214 +15,182 @@ class TeleconsultationScreen extends StatefulWidget {
 }
 
 class _TeleconsultationScreenState extends State<TeleconsultationScreen> {
-  final List<Map<String, String>> _mensajes = [
+  bool _isMuted = false;
+  bool _isVideoOff = false;
+  bool _isSpeakerOn = true;
+  int _callDurationSeconds = 0;
+  Timer? _timer;
+
+  final List<Map<String, String>> _chatMessages = [
     {
-      'emisor': 'doctor',
-      'texto':
-          '¡Hola! Bienvenido a la consulta virtual de TeleMedicina Ecuador. Presiona el ícono de la cámara arriba para iniciar la videollamada.',
+      'sender': 'doctor',
+      'text':
+          'Hola, bienvenido a la teleconsulta. ¿En qué le puedo ayudar hoy?',
     },
   ];
+  final TextEditingController _messageController = TextEditingController();
 
-  final _textController = TextEditingController();
+  @override
+  void initState() {
+    super.initState();
+    _startCallTimer();
+  }
 
-  void _enviarMensaje() {
-    if (_textController.text.trim().isEmpty) return;
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _messageController.dispose();
+    super.dispose();
+  }
 
-    setState(() {
-      _mensajes.add({
-        'emisor': 'paciente',
-        'texto': _textController.text.trim(),
-      });
+  void _startCallTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _callDurationSeconds++;
+        });
+      }
     });
-
-    _textController.clear();
   }
 
-  // Generador e iniciador de sala de videollamada HD
-  Future<void> _iniciarVideoLlamada() async {
-    // Genera un ID de sala único basado en la especialidad y timestamp
-    final String cleanEspecialidad = widget.especialidad.replaceAll(
-      RegExp(r'[^a-zA-Z0-9]'),
-      '',
-    );
-    final String roomName = 'TelemedEcuador_${cleanEspecialidad}_17123456';
-    final Uri url = Uri.parse('https://meet.jit.si/$roomName');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Abriendo sala segura de videollamada...'),
-        backgroundColor: Colors.teal,
-      ),
-    );
-
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo abrir el navegador para la videollamada.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+  String _formatDuration(int totalSeconds) {
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
-  void _mostrarDialogoReceta() {
-    final diagController = TextEditingController();
-    final medController = TextEditingController();
-    final indController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.assignment, color: Colors.teal),
-            SizedBox(width: 8),
-            Text('Emitir Receta Médica'),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: diagController,
-                decoration: const InputDecoration(
-                  labelText: 'Diagnóstico (CIE-10)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: medController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Medicamentos Prescritos',
-                  hintText: 'Ej. Paracetamol 500mg cada 8 horas por 5 días',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: indController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Indicaciones Generales',
-                  hintText: 'Reposo, abundante hidratación',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              _mostrarRecetaGenerada(
-                diagController.text,
-                medController.text,
-                indController.text,
-              );
-            },
-            child: const Text('GENERAR Y FIRMAR'),
-          ),
-        ],
-      ),
-    );
+  void _sendMessage() {
+    if (_messageController.text.trim().isEmpty) return;
+    setState(() {
+      _chatMessages.add({
+        'sender': 'patient',
+        'text': _messageController.text.trim(),
+      });
+      _messageController.clear();
+    });
   }
 
-  void _mostrarRecetaGenerada(String diag, String med, String ind) {
+  void _openChatBottomSheet() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        height: MediaQuery.of(context).size.height * 0.75,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '📄 Receta Médica Digital',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const Divider(thickness: 2),
-            const SizedBox(height: 10),
-            Text(
-              'Profesional: ${widget.doctorNombre}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text(
-              'Especialidad: ${widget.especialidad}',
-              style: const TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 15),
-            Container(
-              padding: const EdgeInsets.all(12),
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                top: 16,
+                left: 16,
+                right: 16,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'DIAGNÓSTICO: $diag',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('PRESCRIPCIÓN:\n$med'),
-                  const SizedBox(height: 8),
-                  Text('INDICACIONES:\n$ind'),
-                ],
-              ),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.teal),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.verified, color: Colors.teal),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Firma Electrónica Autorizada - Válida en Farmacias',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal,
+              child: SizedBox(
+                height: 400,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Chat de la Consulta',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const Divider(),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _chatMessages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _chatMessages[index];
+                          final isMe = msg['sender'] == 'patient';
+                          return Align(
+                            alignment: isMe
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isMe
+                                    ? Colors.teal
+                                    : Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                msg['text'] ?? '',
+                                style: TextStyle(
+                                  color: isMe ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            decoration: const InputDecoration(
+                              hintText: 'Escriba un mensaje...',
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.send, color: Colors.teal),
+                          onPressed: () {
+                            _sendMessage();
+                            setModalState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ),
               ),
-            ),
-          ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _finalizarLlamada() {
+    _timer?.cancel();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Llamada Finalizada'),
+        content: Text(
+          'La consulta con ${widget.doctorNombre} ha concluido con una duración de ${_formatDuration(_callDurationSeconds)}.',
         ),
+        actions: [
+          ElevatedButton(
+            child: const Text('Aceptar'),
+            onPressed: () {
+              Navigator.pop(context); // Cierra dialog
+              Navigator.pop(context); // Regresa a pantalla anterior
+            },
+          ),
+        ],
       ),
     );
   }
@@ -231,88 +198,179 @@ class _TeleconsultationScreenState extends State<TeleconsultationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
           children: [
-            Text(widget.doctorNombre, style: const TextStyle(fontSize: 16)),
-            Text(
-              widget.especialidad,
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            // Feed Principal: Cámara del Doctor
+            Positioned.fill(
+              child: Container(
+                color: Colors.grey.shade900,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircleAvatar(
+                      radius: 60,
+                      backgroundColor: Colors.teal,
+                      child: Icon(Icons.person, size: 70, color: Colors.white),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      widget.doctorNombre,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.fiber_manual_record,
+                          color: Colors.green,
+                          size: 12,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'En vivo • ${_formatDuration(_callDurationSeconds)}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // PiP (Picture-in-Picture): Vista previa de la cámara del paciente
+            Positioned(
+              right: 16,
+              top: 16,
+              width: 110,
+              height: 150,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  color: _isVideoOff
+                      ? Colors.grey.shade800
+                      : Colors.blueGrey.shade700,
+                  child: _isVideoOff
+                      ? const Center(
+                          child: Icon(
+                            Icons.videocam_off,
+                            color: Colors.white54,
+                            size: 30,
+                          ),
+                        )
+                      : Stack(
+                          children: const [
+                            Center(
+                              child: Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 40,
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 4,
+                              left: 4,
+                              child: Text(
+                                'Tú',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+
+            // Barra inferior con controles de la llamada
+            Positioned(
+              bottom: 24,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Mute / Unmute
+                    CircleAvatar(
+                      backgroundColor: _isMuted ? Colors.red : Colors.white24,
+                      child: IconButton(
+                        icon: Icon(
+                          _isMuted ? Icons.mic_off : Icons.mic,
+                          color: Colors.white,
+                        ),
+                        onPressed: () => setState(() => _isMuted = !_isMuted),
+                      ),
+                    ),
+                    // Video On / Off
+                    CircleAvatar(
+                      backgroundColor: _isVideoOff
+                          ? Colors.red
+                          : Colors.white24,
+                      child: IconButton(
+                        icon: Icon(
+                          _isVideoOff ? Icons.videocam_off : Icons.videocam,
+                          color: Colors.white,
+                        ),
+                        onPressed: () =>
+                            setState(() => _isVideoOff = !_isVideoOff),
+                      ),
+                    ),
+                    // Altavoz
+                    CircleAvatar(
+                      backgroundColor: _isSpeakerOn
+                          ? Colors.teal
+                          : Colors.white24,
+                      child: IconButton(
+                        icon: Icon(
+                          _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
+                          color: Colors.white,
+                        ),
+                        onPressed: () =>
+                            setState(() => _isSpeakerOn = !_isSpeakerOn),
+                      ),
+                    ),
+                    // Abrir Chat
+                    CircleAvatar(
+                      backgroundColor: Colors.white24,
+                      child: IconButton(
+                        icon: const Icon(Icons.chat, color: Colors.white),
+                        onPressed: _openChatBottomSheet,
+                      ),
+                    ),
+                    // Cortar Llamada
+                    CircleAvatar(
+                      backgroundColor: Colors.red,
+                      child: IconButton(
+                        icon: const Icon(Icons.call_end, color: Colors.white),
+                        onPressed: _finalizarLlamada,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.note_add),
-            tooltip: 'Emitir Receta Médica',
-            onPressed: _mostrarDialogoReceta,
-          ),
-          IconButton(
-            icon: const Icon(Icons.videocam),
-            tooltip: 'Iniciar VideoLlamada HD',
-            onPressed: _iniciarVideoLlamada,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _mensajes.length,
-              itemBuilder: (context, index) {
-                final msg = _mensajes[index];
-                final esDoctor = msg['emisor'] == 'doctor';
-
-                return Align(
-                  alignment: esDoctor
-                      ? Alignment.centerLeft
-                      : Alignment.centerRight,
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: esDoctor ? Colors.grey[200] : Colors.teal[100],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      msg['texto'] ?? '',
-                      style: const TextStyle(fontSize: 15),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(8),
-            color: Colors.white,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    decoration: const InputDecoration(
-                      hintText: 'Escribe tu consulta...',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Colors.teal),
-                  onPressed: _enviarMensaje,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
