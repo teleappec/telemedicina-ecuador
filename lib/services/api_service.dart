@@ -167,4 +167,49 @@ class ApiService {
       return {'exito': false, 'mensaje': 'Error de conexión con el servidor.'};
     }
   }
+
+  /// Obtener listado de brigadas médicas
+  static Future<List<dynamic>> obtenerBrigadas() async {
+    try {
+      final url = Uri.parse('$baseUrl/brigadas');
+      final response = await http.get(url).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['brigadas'] ?? [];
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Registrar nueva brigada con datos GPS
+  static Future<Map<String, dynamic>> registrarBrigada(
+    Map<String, dynamic> datosBrigada,
+  ) async {
+    try {
+      final url = Uri.parse('$baseUrl/brigadas');
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(datosBrigada),
+          )
+          .timeout(const Duration(seconds: 40));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {'exito': true, 'mensaje': 'Brigada registrada correctamente'};
+      } else {
+        return {
+          'exito': false,
+          'mensaje': data['mensaje'] ?? 'Error al guardar brigada',
+        };
+      }
+    } catch (e) {
+      return {'exito': false, 'mensaje': 'Error de conexión con el servidor.'};
+    }
+  }
 }

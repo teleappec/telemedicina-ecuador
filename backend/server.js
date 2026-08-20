@@ -62,6 +62,20 @@ db.serialize(() => {
       fecha TEXT
     )
   `);
+
+  // Tabla Brigadas Médicas y GPS
+  db.run(`
+    CREATE TABLE IF NOT EXISTS brigadas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nombre_brigada TEXT,
+      lugar TEXT,
+      latitud REAL,
+      longitud REAL,
+      fecha TEXT,
+      observaciones TEXT,
+      estado TEXT DEFAULT 'Activa'
+    )
+  `);
 });
 
 // Ruta Raíz
@@ -275,6 +289,59 @@ app.post('/api/atenciones', (req, res) => {
       res.status(201).json({
         exito: true,
         mensaje: 'Triaje registrado correctamente',
+        id: this.lastID,
+      });
+    }
+  );
+});
+
+// GET /api/brigadas - Listar brigadas médicas
+app.get('/api/brigadas', (req, res) => {
+  const sql = `SELECT * FROM brigadas ORDER BY id DESC`;
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ exito: false, mensaje: 'Error al consultar brigadas.' });
+    }
+    res.status(200).json({ exito: true, brigadas: rows });
+  });
+});
+
+// POST /api/brigadas - Registrar nueva brigada médica con GPS
+app.post('/api/brigadas', (req, res) => {
+  const { nombre_brigada, lugar, latitud, longitud, fecha, observaciones } = req.body;
+
+  if (!nombre_brigada || !lugar || !fecha) {
+    return res.status(400).json({
+      exito: false,
+      mensaje: 'El nombre, lugar y fecha son obligatorios.',
+    });
+  }
+
+  const sql = `
+    INSERT INTO brigadas (nombre_brigada, lugar, latitud, longitud, fecha, observaciones)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(
+    sql,
+    [
+      nombre_brigada,
+      lugar,
+      latitud || -0.1807,
+      longitud || -78.4678,
+      fecha,
+      observaciones || '',
+    ],
+    function (err) {
+      if (err) {
+        return res.status(500).json({
+          exito: false,
+          mensaje: 'Error al registrar la brigada en la base de datos.',
+        });
+      }
+      res.status(201).json({
+        exito: true,
+        mensaje: 'Brigada agendada exitosamente',
         id: this.lastID,
       });
     }
