@@ -1,5 +1,5 @@
-// lib/screens/triage_screen.dart
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/notification_service.dart';
 
 class TriageScreen extends StatefulWidget {
@@ -10,258 +10,304 @@ class TriageScreen extends StatefulWidget {
 }
 
 class _TriageScreenState extends State<TriageScreen> {
+  List<dynamic> _atenciones = [];
+  bool _cargando = true;
+
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _pacienteController = TextEditingController();
+  final TextEditingController _cedulaController = TextEditingController();
+  final TextEditingController _paController = TextEditingController(
+    text: '120/80',
+  );
+  final TextEditingController _fcController = TextEditingController(text: '75');
+  final TextEditingController _tempController = TextEditingController(
+    text: '36.5',
+  );
+  final TextEditingController _spo2Controller = TextEditingController(
+    text: '98',
+  );
+  final TextEditingController _obsController = TextEditingController();
 
-  // Datos del Paciente
-  final _nombreController = TextEditingController();
-  final _cedulaController = TextEditingController();
-  final _edadController = TextEditingController();
-
-  // Signos Vitales
-  final _paController = TextEditingController(); // Presión Arterial
-  final _fcController = TextEditingController(); // Frecuencia Cardíaca
-  final _frController = TextEditingController(); // Frecuencia Respiratoria
-  final _tempController = TextEditingController(); // Temperatura
-  final _spo2Controller = TextEditingController(); // Saturación de O2
-  final _glucoController = TextEditingController(); // Glucemia
-
-  // Procedimientos de Enfermería
-  String _procedimiento = 'Control de Signos Vitales';
-  final _notasController = TextEditingController();
-
-  final List<String> _opcionesProcedimientos = [
-    'Control de Signos Vitales',
-    'Curación de Heridas / Postquirúrgico',
-    'Administración de Medicamentos / Inyectología',
-    'Canalización de Vía Periférica / Sueroterapia',
-    'Toma de Muestras de Laboratorio',
-    'Retiro de Puntos / Sondas',
+  String _clasificacionSeleccionada = 'Verde (Sin Riesgo Vital)';
+  final List<String> _clasificaciones = [
+    'Rojo (Reanimación - Emergencia)',
+    'Amarillo (Urgencia)',
+    'Verde (Sin Riesgo Vital)',
+    'Azul (Consulta No Urgente)',
   ];
 
-  void _guardarAtencion() {
-    if (_formKey.currentState!.validate()) {
-      NotificationService.mostrarNotificacion(
-        titulo: 'Registro de Enfermería Exitoso 🩺',
-        mensaje: 'Atención guardada para ${_nombreController.text}.',
-        icono: Icons.check_circle,
-        colorFondo: Colors.indigo.shade800,
-      );
+  @override
+  void initState() {
+    super.initState();
+    _cargarTriajes();
+  }
 
-      _formKey.currentState!.reset();
-      _nombreController.clear();
-      _cedulaController.clear();
-      _edadController.clear();
-      _paController.clear();
-      _fcController.clear();
-      _frController.clear();
-      _tempController.clear();
-      _spo2Controller.clear();
-      _glucoController.clear();
-      _notasController.clear();
+  Future<void> _cargarTriajes() async {
+    setState(() => _cargando = true);
+    final lista = await ApiService.obtenerAtenciones();
+    if (!mounted) return;
+    setState(() {
+      _atenciones = lista;
+      _cargando = false;
+    });
+  }
+
+  Color _obtenerColorPrioridad(String clasificacion) {
+    if (clasificacion.contains('Rojo')) {
+      return Colors.red;
     }
+    if (clasificacion.contains('Amarillo')) {
+      return Colors.amber.shade700;
+    }
+    if (clasificacion.contains('Verde')) {
+      return Colors.green;
+    }
+    return Colors.blue;
+  }
+
+  Future<void> _mostrarModalNuevoTriaje() async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            top: 20,
+            left: 20,
+            right: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Nueva Ficha de Triaje (Enfermería)',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _pacienteController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Paciente',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Requerido';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _cedulaController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Cédula Paciente',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.badge),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: _clasificacionSeleccionada,
+                    decoration: const InputDecoration(
+                      labelText: 'Clasificación de Prioridad',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.traffic),
+                    ),
+                    items: _clasificaciones
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(
+                              c,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _clasificacionSeleccionada = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _paController,
+                          decoration: const InputDecoration(
+                            labelText: 'P.A. (mmHg)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _fcController,
+                          decoration: const InputDecoration(
+                            labelText: 'F.C. (bpm)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _tempController,
+                          decoration: const InputDecoration(
+                            labelText: 'Temp (°C)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _spo2Controller,
+                          decoration: const InputDecoration(
+                            labelText: 'SpO2 (%)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _obsController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Síntomas / Observaciones',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF26A69A),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () async {
+                        if (!_formKey.currentState!.validate()) return;
+                        Navigator.pop(context);
+
+                        final res = await ApiService.registrarTriaje({
+                          'paciente': _pacienteController.text.trim(),
+                          'cedula_paciente': _cedulaController.text.trim(),
+                          'presion_arterial': _paController.text.trim(),
+                          'frecuencia_cardiaca':
+                              '${_fcController.text.trim()} bpm',
+                          'temperatura': '${_tempController.text.trim()} °C',
+                          'saturacion_oxigeno':
+                              '${_spo2Controller.text.trim()}%',
+                          'clasificacion': _clasificacionSeleccionada,
+                          'observaciones': _obsController.text.trim(),
+                        });
+
+                        if (res['exito'] == true) {
+                          NotificationService.mostrarNotificacion(
+                            titulo: 'Triaje Guardado 🩺',
+                            mensaje:
+                                'Ficha de enfermería sincronizada con Render.',
+                            icono: Icons.health_and_safety,
+                            colorFondo: const Color(0xFF26A69A),
+                          );
+                          _pacienteController.clear();
+                          _cedulaController.clear();
+                          _obsController.clear();
+                          _cargarTriajes();
+                        }
+                      },
+                      child: const Text('GUARDAR FICHA DE TRIAJE'),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Módulo de Enfermería & Triaje'),
-        backgroundColor: Colors.indigo.shade800,
-        foregroundColor: Colors.white,
-      ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Sección Datos del Paciente
-              const Text(
-                '1. DATOS DEL PACIENTE',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.indigo,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _nombreController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombres y Apellidos Completos',
-                  prefixIcon: Icon(Icons.person),
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) => v!.isEmpty ? 'Requerido' : null,
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _cedulaController,
-                      keyboardType: TextInputType.number,
-                      maxLength: 10,
-                      decoration: const InputDecoration(
-                        labelText: 'Cédula',
-                        prefixIcon: Icon(Icons.badge),
-                        border: OutlineInputBorder(),
-                        counterText: '',
-                      ),
-                      validator: (v) => v!.length != 10 ? '10 dígitos' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _edadController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Edad (Años)',
-                        prefixIcon: Icon(Icons.cake),
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-              // Sección Signos Vitales
-              const Text(
-                '2. SIGNOS VITALES Y SOMATOMETRÍA',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.indigo,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _paController,
-                      decoration: const InputDecoration(
-                        labelText: 'P. Arterial (mmHg)',
-                        hintText: '120/80',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _fcController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'F. Cardíaca (bpm)',
-                        hintText: '75',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _tempController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Temp (°C)',
-                        hintText: '36.5',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _spo2Controller,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'SpO2 (%)',
-                        hintText: '98',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) => v!.isEmpty ? 'Requerido' : null,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _glucoController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Glucemia (mg/dL)',
-                        hintText: '95',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-              // Sección Procedimiento y Notas
-              const Text(
-                '3. ATENCIÓN Y NOTAS DE ENFERMERÍA',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.indigo,
-                ),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: _procedimiento,
-                decoration: const InputDecoration(
-                  labelText: 'Procedimiento Principal',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.medical_services),
-                ),
-                items: _opcionesProcedimientos
-                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-                    .toList(),
-                onChanged: (v) => setState(() => _procedimiento = v!),
-              ),
-              const SizedBox(height: 10),
-              TextFormField(
-                controller: _notasController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Observaciones / Evolución de Enfermería',
-                  hintText:
-                      'Ej. Paciente refiere alivio de dolor. Vía periférica permeable sin signos de flebitis.',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo.shade800,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: _guardarAtencion,
-                  icon: const Icon(Icons.save),
-                  label: const Text('REGISTRAR ATENCIÓN DE ENFERMERÍA'),
-                ),
-              ),
-            ],
+        title: const Text('Triaje y Signos Vitales'),
+        backgroundColor: const Color(0xFF26A69A),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _cargarTriajes,
           ),
-        ),
+        ],
+      ),
+      body: _cargando
+          ? const Center(child: CircularProgressIndicator())
+          : _atenciones.isEmpty
+          ? const Center(child: Text('No hay fichas de triaje registradas.'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: _atenciones.length,
+              itemBuilder: (context, index) {
+                final item = _atenciones[index];
+                final String clasif = item['clasificacion'] ?? 'Verde';
+                final colorPrioridad = _obtenerColorPrioridad(clasif);
+
+                return Card(
+                  elevation: 3,
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: colorPrioridad,
+                      child: const Icon(
+                        Icons.favorite,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      item['paciente'] ?? 'Sin Nombre',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      '${item['clasificacion']}\nPA: ${item['presion_arterial']} | FC: ${item['frecuencia_cardiaca']} | Temp: ${item['temperatura']} | SpO2: ${item['saturacion_oxigeno']}\nObs: ${item['observaciones'] ?? "Ninguna"}',
+                    ),
+                    isThreeLine: true,
+                    trailing: Text(
+                      item['fecha'] ?? '',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _mostrarModalNuevoTriaje,
+        backgroundColor: const Color(0xFF26A69A),
+        icon: const Icon(Icons.medical_services),
+        label: const Text('Nuevo Triaje'),
       ),
     );
   }

@@ -46,6 +46,22 @@ db.serialize(() => {
       estado TEXT DEFAULT 'Pendiente'
     )
   `);
+
+  // Tabla Triaje y Atenciones de Enfermería
+  db.run(`
+    CREATE TABLE IF NOT EXISTS atenciones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      paciente TEXT,
+      cedula_paciente TEXT,
+      presion_arterial TEXT,
+      frecuencia_cardiaca TEXT,
+      temperatura TEXT,
+      saturacion_oxigeno TEXT,
+      clasificacion TEXT,
+      observaciones TEXT,
+      fecha TEXT
+    )
+  `);
 });
 
 // Ruta Raíz
@@ -191,6 +207,74 @@ app.post('/api/citas', (req, res) => {
       res.status(201).json({
         exito: true,
         mensaje: 'Cita agendada correctamente',
+        id: this.lastID,
+      });
+    }
+  );
+});
+
+// GET /api/atenciones - Obtener fichas de triaje
+app.get('/api/atenciones', (req, res) => {
+  const sql = `SELECT * FROM atenciones ORDER BY id DESC`;
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ exito: false, mensaje: 'Error al consultar registros de triaje.' });
+    }
+    res.status(200).json({ exito: true, atenciones: rows });
+  });
+});
+
+// POST /api/atenciones - Registrar nueva ficha de triaje
+app.post('/api/atenciones', (req, res) => {
+  const {
+    paciente,
+    cedula_paciente,
+    presion_arterial,
+    frecuencia_cardiaca,
+    temperatura,
+    saturacion_oxigeno,
+    clasificacion,
+    observaciones
+  } = req.body;
+
+  if (!paciente || !clasificacion) {
+    return res.status(400).json({
+      exito: false,
+      mensaje: 'El paciente y la clasificación son obligatorios.',
+    });
+  }
+
+  const fechaHoy = new Date().toISOString().split('T')[0];
+
+  const sql = `
+    INSERT INTO atenciones 
+    (paciente, cedula_paciente, presion_arterial, frecuencia_cardiaca, temperatura, saturacion_oxigeno, clasificacion, observaciones, fecha)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(
+    sql,
+    [
+      paciente,
+      cedula_paciente || '',
+      presion_arterial || '120/80',
+      frecuencia_cardiaca || '75 bpm',
+      temperatura || '36.5 °C',
+      saturacion_oxigeno || '98%',
+      clasificacion,
+      observaciones || '',
+      fechaHoy,
+    ],
+    function (err) {
+      if (err) {
+        return res.status(500).json({
+          exito: false,
+          mensaje: 'Error al guardar la ficha de triaje en la BD.',
+        });
+      }
+      res.status(201).json({
+        exito: true,
+        mensaje: 'Triaje registrado correctamente',
         id: this.lastID,
       });
     }
