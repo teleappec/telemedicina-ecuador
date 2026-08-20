@@ -1,63 +1,80 @@
-// lib/services/api_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Reemplaza con la URL real de tu instancia en Render
+  // URL de tu servidor desplegado en Render
   static const String baseUrl = 'https://telemedicina-ecuador.onrender.com/api';
 
-  /// Guarda un registro de profesional (Médico / Enfermero / Brigada)
-  static Future<bool> registrarProfesional(Map<String, dynamic> datos) async {
+  /// Iniciar sesión consultando la API en Render
+  static Future<Map<String, dynamic>> iniciarSesion({
+    required String cedula,
+    required String password,
+    required String rol,
+  }) async {
     try {
+      final url = Uri.parse('$baseUrl/login');
       final response = await http
           .post(
-            Uri.parse('$baseUrl/profesionales'),
+            url,
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(datos),
+            body: jsonEncode({
+              'cedula': cedula,
+              'password': password,
+              'rol': rol,
+            }),
           )
           .timeout(
             const Duration(seconds: 60),
-          ); // Manejo del cold start de Render
+          ); // Render puede tardar si estaba dormido
 
-      return response.statusCode == 200 || response.statusCode == 201;
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {
+          'exito': true,
+          'usuario': data['usuario'],
+          'mensaje': data['mensaje'] ?? 'Acceso autorizado',
+        };
+      } else {
+        return {
+          'exito': false,
+          'mensaje': data['mensaje'] ?? 'Credenciales incorrectas.',
+        };
+      }
     } catch (e) {
-      print('Error al guardar en backend: $e');
-      return false;
+      return {
+        'exito': false,
+        'mensaje': 'Error de conexión con el servidor. Inténtalo de nuevo.',
+      };
     }
   }
 
-  /// Agenda una nueva cita médica
-  static Future<bool> agendarCita(Map<String, dynamic> citaData) async {
+  /// Ejemplo: Registrar profesional de salud
+  static Future<Map<String, dynamic>> registrarProfesional(
+    Map<String, dynamic> datos,
+  ) async {
     try {
+      final url = Uri.parse('$baseUrl/profesionales');
       final response = await http
           .post(
-            Uri.parse('$baseUrl/citas'),
+            url,
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(citaData),
+            body: jsonEncode(datos),
           )
           .timeout(const Duration(seconds: 60));
 
-      return response.statusCode == 200 || response.statusCode == 201;
-    } catch (e) {
-      print('Error al agendar cita: $e');
-      return false;
-    }
-  }
+      final data = jsonDecode(response.body);
 
-  /// Obtiene la lista de citas desde la base de datos
-  static Future<List<dynamic>> obtenerCitas() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/citas'))
-          .timeout(const Duration(seconds: 60));
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {'exito': true, 'mensaje': 'Registro exitoso'};
+      } else {
+        return {
+          'exito': false,
+          'mensaje': data['mensaje'] ?? 'Error en el registro',
+        };
       }
-      return [];
     } catch (e) {
-      print('Error al obtener citas: $e');
-      return [];
+      return {'exito': false, 'mensaje': 'Error de red al conectar con Render'};
     }
   }
 }

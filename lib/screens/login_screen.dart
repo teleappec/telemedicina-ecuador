@@ -1,16 +1,14 @@
-// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import 'doctor_profile_screen.dart';
-import 'patient_flow_screen.dart';
 import 'triage_screen.dart';
+import 'patient_flow_screen.dart';
 
 enum RolProfesional { medico, enfermero, brigada }
 
 class LoginScreen extends StatefulWidget {
-  final RolProfesional rolInicial;
-
-  const LoginScreen({super.key, this.rolInicial = RolProfesional.medico});
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -19,81 +17,57 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _cedulaController = TextEditingController();
-  final TextEditingController _senescytController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  bool _obscurePassword = true;
-  late RolProfesional _rolSeleccionado;
-
-  @override
-  void initState() {
-    super.initState();
-    _rolSeleccionado = widget.rolInicial;
-  }
-
-  /// Validador de Cédula Ecuatoriana (10 dígitos)
-  String? _validarCedula(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Ingrese su número de cédula';
-    }
-    final cedula = value.trim();
-    if (cedula.length != 10 || int.tryParse(cedula) == null) {
-      return 'La cédula debe contener 10 dígitos numéricos';
-    }
-    return null;
-  }
-
-  /// Validador del Registro SENESCYT / Código Institucional
-  String? _validarSenescyt(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Ingrese su registro SENESCYT o código de brigada';
-    }
-    return null;
-  }
-
-  /// Validador de Contraseña
-  String? _validarPassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Ingrese su contraseña';
-    }
-    if (value.length < 6) {
-      return 'Mínimo 6 caracteres';
-    }
-    return null;
-  }
+  RolProfesional _rolSeleccionado = RolProfesional.medico;
+  bool _cargando = false;
+  bool _ocultarPassword = true;
 
   String get _nombreRol {
     switch (_rolSeleccionado) {
       case RolProfesional.medico:
-        return 'MÉDICO';
+        return 'Médico';
       case RolProfesional.enfermero:
-        return 'ENFERMERO';
+        return 'Enfermero';
       case RolProfesional.brigada:
-        return 'BRIGADA';
+        return 'Brigada';
     }
   }
 
   Color get _colorRol {
     switch (_rolSeleccionado) {
       case RolProfesional.medico:
-        return Colors.teal.shade800;
+        return const Color(0xFF1E88E5);
       case RolProfesional.enfermero:
-        return Colors.indigo.shade800;
+        return const Color(0xFF26A69A);
       case RolProfesional.brigada:
-        return Colors.deepOrange.shade800;
+        return const Color(0xFF8E24AA);
     }
   }
 
-  void _procesarIngreso() {
-    if (_formKey.currentState!.validate()) {
+  Future<void> _procesarIngreso() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _cargando = true);
+
+    // Consulta real al Backend en Render
+    final resultado = await ApiService.iniciarSesion(
+      cedula: _cedulaController.text.trim(),
+      password: _passwordController.text,
+      rol: _nombreRol,
+    );
+
+    if (!mounted) return;
+    setState(() => _cargando = false);
+
+    if (resultado['exito'] == true) {
       NotificationService.mostrarNotificacion(
-        titulo: 'Bienvenido(a) 🎉',
-        mensaje: 'Acceso autorizado como $_nombreRol.',
+        titulo: 'Acceso Concedido 🎉',
+        mensaje: 'Bienvenido(a) $_nombreRol.',
         icono: Icons.verified_user,
         colorFondo: _colorRol,
       );
 
-      // Redirección según el rol profesional seleccionado
       Widget pantallaDestino;
       switch (_rolSeleccionado) {
         case RolProfesional.medico:
@@ -113,193 +87,157 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } else {
       NotificationService.mostrarNotificacion(
-        titulo: 'Formulario Incompleto ⚠️',
-        mensaje: 'Verifique los datos ingresados.',
-        icono: Icons.warning_amber_rounded,
-        colorFondo: Colors.orange.shade900,
+        titulo: 'Acceso Denegado ❌',
+        mensaje: resultado['mensaje'] ?? 'Cédula o contraseña incorrectas.',
+        icono: Icons.error_outline,
+        colorFondo: Colors.red.shade800,
       );
     }
   }
 
   @override
+  void dispose() {
+    _cedulaController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Acceso de Personal de Salud'),
-        backgroundColor: Colors.teal.shade800,
-        foregroundColor: Colors.white,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Portal Profesional MSP',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.teal,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Seleccione su perfil operativo para ingresar:',
-                  style: TextStyle(color: Colors.black54),
-                ),
-                const SizedBox(height: 18),
-
-                // Pestañas / Selector de Perfil Profesional
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      _buildTabButton(
-                        'Médico',
-                        RolProfesional.medico,
-                        Icons.medical_services,
-                      ),
-                      _buildTabButton(
-                        'Enfermero',
-                        RolProfesional.enfermero,
-                        Icons.local_hospital,
-                      ),
-                      _buildTabButton(
-                        'Brigada',
-                        RolProfesional.brigada,
-                        Icons.biotech,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Campo Cédula
-                TextFormField(
-                  controller: _cedulaController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 10,
-                  decoration: const InputDecoration(
-                    labelText: 'Cédula de Identidad',
-                    hintText: 'Ej. 1723456789',
-                    prefixIcon: Icon(Icons.badge, color: Colors.teal),
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: _validarCedula,
-                ),
-                const SizedBox(height: 14),
-
-                // Campo Registro SENESCYT
-                TextFormField(
-                  controller: _senescytController,
-                  decoration: InputDecoration(
-                    labelText: _rolSeleccionado == RolProfesional.brigada
-                        ? 'Código de Brigada / MSP'
-                        : 'Registro SENESCYT',
-                    hintText: 'Ej. 1005-2023-123456',
-                    prefixIcon: const Icon(Icons.verified, color: Colors.teal),
-                    border: const OutlineInputBorder(),
-                  ),
-                  validator: _validarSenescyt,
-                ),
-                const SizedBox(height: 14),
-
-                // Campo Contraseña
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    labelText: 'Contraseña',
-                    prefixIcon: const Icon(Icons.lock, color: Colors.teal),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                    border: const OutlineInputBorder(),
-                  ),
-                  validator: _validarPassword,
-                ),
-                const SizedBox(height: 28),
-
-                // Botón de Envío
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _colorRol,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: _procesarIngreso,
-                    child: Text(
-                      'INGRESAR COMO $_nombreRol',
-                      style: const TextStyle(
-                        fontSize: 15,
+      backgroundColor: Colors.grey[100],
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Card(
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(28.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.local_hospital, size: 64, color: _colorRol),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Telemedicina Ecuador',
+                      style: TextStyle(
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+                    const SizedBox(height: 24),
 
-  Widget _buildTabButton(String texto, RolProfesional rol, IconData icono) {
-    final bool seleccionado = _rolSeleccionado == rol;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _rolSeleccionado = rol;
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: seleccionado ? _colorRol : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icono,
-                size: 20,
-                color: seleccionado ? Colors.white : Colors.grey.shade700,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                texto,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: seleccionado ? Colors.white : Colors.grey.shade700,
+                    // Selector de Rol
+                    DropdownButtonFormField<RolProfesional>(
+                      value: _rolSeleccionado,
+                      decoration: const InputDecoration(
+                        labelText: 'Rol Profesional',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.badge),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: RolProfesional.medico,
+                          child: Text('Médico'),
+                        ),
+                        DropdownMenuItem(
+                          value: RolProfesional.enfermero,
+                          child: Text('Enfermero'),
+                        ),
+                        DropdownMenuItem(
+                          value: RolProfesional.brigada,
+                          child: Text('Brigada'),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _rolSeleccionado = val);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Campo Cédula
+                    TextFormField(
+                      controller: _cedulaController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Número de Cédula',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.person),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Ingrese su número de cédula';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Campo Contraseña
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: _ocultarPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Contraseña',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _ocultarPassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                          onPressed: () => setState(
+                            () => _ocultarPassword = !_ocultarPassword,
+                          ),
+                        ),
+                      ),
+                      validator: (val) {
+                        if (val == null || val.isEmpty) {
+                          return 'Ingrese su contraseña';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Botón de Ingreso
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _colorRol,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: _cargando ? null : _procesarIngreso,
+                        child: _cargando
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                'INGRESAR AL SISTEMA',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

@@ -13,6 +13,35 @@ app.use(express.json());
 const db = new sqlite3.Database('./telemedicina.db', (err) => {
   if (err) console.error('Error al conectar BD:', err.message);
   else console.log('Conectado a la base de datos SQLite.');
+
+  // POST /api/login - Validar ingreso de usuarios
+app.post('/api/login', (req, res) => {
+  const { cedula, password, rol } = req.body;
+
+  // Buscar coincidencia en la base de datos o lista de profesionales
+  const usuario = profesionales.find(
+    (p) => p.cedula === cedula && 
+           p.password === password && 
+           p.rol.toUpperCase() === rol.toUpperCase()
+  );
+
+  if (usuario) {
+    return res.status(200).json({
+      exito: true,
+      mensaje: 'Acceso autorizado',
+      usuario: {
+        cedula: usuario.cedula,
+        rol: usuario.rol,
+        senescyt: usuario.senescyt,
+      },
+    });
+  }
+
+  return res.status(401).json({
+    exito: false,
+    mensaje: 'Cédula, contraseña o rol incorrectos',
+  });
+});
 });
 
 // Inicialización de Tablas
